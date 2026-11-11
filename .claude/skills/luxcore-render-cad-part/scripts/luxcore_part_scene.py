@@ -16,6 +16,7 @@ Examples
 import argparse
 import math
 import os
+import shutil
 import struct
 import sys
 
@@ -238,14 +239,24 @@ def main(argv=None):
     ap.add_argument("--time", type=int, default=600, help="batch.halttime seconds (0 = off)")
     ap.add_argument("--noise", type=float, default=0.0,
                     help="batch.haltnoisethreshold, e.g. 0.02 (0 = off)")
-    ap.add_argument("--floor", default="white", choices=["white", "grey", "shadowcatcher", "none"])
+    ap.add_argument("--floor", default=None, choices=["white", "grey", "shadowcatcher", "none"],
+                    help="default: white, or shadowcatcher with --env-map")
     ap.add_argument("--env", default="studio", choices=["studio", "sky"],
                     help="studio = softboxes + dim fill, sky = sun and sky")
+    ap.add_argument("--env-map", default=None, metavar="FILE",
+                    help="equirectangular environment image (.exr/.hdr/.jpg/.png); replaces --env")
+    ap.add_argument("--env-rotate", type=float, default=0.0,
+                    help="rotate the environment map about Z, degrees")
+    ap.add_argument("--env-gain", type=float, default=1.0, help="environment map brightness")
     ap.add_argument("--denoise", action="store_true", help="add INTEL_OIDN to the pipeline")
     ap.add_argument("--transparent", action="store_true",
                     help="also write render_alpha.png (RGBA); use with --floor shadowcatcher|none")
     ap.add_argument("--output", default="render.png", help="image name, relative to --out")
     a = ap.parse_args(argv)
+    if a.env_map:
+        a.env = "map"
+    if a.floor is None:
+        a.floor = "shadowcatcher" if a.env == "map" else "white"
 
     os.makedirs(a.out, exist_ok=True)
     parts = []
@@ -374,6 +385,22 @@ def main(argv=None):
               "scene.lights.fill.color = 1 1 1",
               "scene.lights.fill.gain = 0.3 0.3 0.3",
               "scene.lights.fill.id = 1"]
+    elif a.env == "map":
+        # Copy the map next to the scene so the folder is self-contained (paths resolve via -d).
+        ext = os.path.splitext(a.env_map)[1].lower()
+        env_name = "environment" + ext
+        shutil.copyfile(a.env_map, os.path.join(a.out, env_name))
+        # LuxCore removes gamma 2.2 from every image by default; HDR data is already linear.
+        gamma = "1" if ext in (".exr", ".hdr") else "2.2"
+        r = math.radians(a.env_rotate)
+        cr, sr = math.cos(r), math.sin(r)
+        s += ["scene.lights.env.type = infinite",
+              f"scene.lights.env.file = {env_name}",
+              f"scene.lights.env.gamma = {gamma}",
+              f"scene.lights.env.gain = {fmt(a.env_gain, a.env_gain, a.env_gain)}",
+              # column-major rotation about Z
+              f"scene.lights.env.transformation = {fmt(cr, sr, 0, 0, -sr, cr, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1)}",
+              "scene.lights.env.id = 1"]
     else:
         s += ["scene.lights.sky.type = sky2",
               "scene.lights.sky.dir = -0.5 -0.7 0.6",

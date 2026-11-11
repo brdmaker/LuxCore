@@ -39,7 +39,10 @@ Getting the STL from SolidCraft (in a 3dassets-style repo):
 | `--width/--height` | 1200/900 | |
 | `--spp` / `--time` / `--noise` | 256 / 600 / off | halt conditions (spp or time, whichever first) |
 | `--env` | `studio` | `studio`: key + rim softboxes (camera-invisible, seen in reflections) and a dim fill; `sky`: sun and sky (blue cast, hard shadows) |
-| `--floor` | `white` | `white`, `grey`, `shadowcatcher`, `none` |
+| `--env-map FILE` | off | equirectangular (360°x180°) environment image (`.exr`/`.hdr`, or `.jpg`/`.png`): lights the part, shows behind it and in reflections; copied into `--out` as `environment.<ext>`; replaces `--env` |
+| `--env-rotate` | 0 | turn the environment about Z (degrees); try 0/90/180/270 at low res and pick |
+| `--env-gain` | 1 | environment brightness |
+| `--floor` | `white` (`shadowcatcher` with `--env-map`) | `white`, `grey`, `shadowcatcher`, `none` |
 | `--exposure` | auto | `TONEMAP_LINEAR` scale instead of auto exposure; `1` suits both `studio` and `sky` (the sky is pre-scaled to match); use one value for a consistent series |
 | `--denoise` | off | Intel OIDN (+ albedo/normal AOVs); 128 spp + denoise looks clean |
 | `--transparent` | off | also `render_alpha.png` (RGBA); pair with `--floor shadowcatcher` (keeps a soft, partly transparent floor shading near the part) or `none` (clean cut-out) |
@@ -51,6 +54,26 @@ Materials: `aluminium`, `aluminium-brushed`, `steel`, `steel-polished`, `brass`,
 (neutral grey, good for checking form). The script prints the bounding box and triangle
 counts; the `.scn` it writes is plain text, so edit it for anything else (colours, roughness,
 extra lights; see `luxcore-scene-format`).
+
+## Environment maps (image-based lighting)
+
+```bash
+python3 $S part.stl:steel --env-map warehouse.jpg --env-rotate 180 --view low --denoise --out /tmp/r/wh
+```
+- The script sets `gamma = 1` for `.exr`/`.hdr` (already linear) and keeps LuxCore's default
+  2.2 for 8-bit `.jpg`/`.png`, so both come out right.
+- A true HDR (`.exr`/`.hdr`) is much better: an 8-bit JPEG clips the bright parts (windows,
+  lamps), so shadows and highlights come out weak and the part tends to look like it floats.
+- `--view low` shows the surroundings behind the part; `iso`/`top` mostly show the map's
+  floor. Facing a bright door or window makes auto exposure darken the part: rotate the map
+  or set `--exposure`.
+- The map is a distant sphere: its floor is not a real floor. The shadowcatcher floor adds
+  contact shadows only where the map has a clearly brighter direction.
+- Background sharpness depends on map resolution vs field of view: a 2.5k-wide map at
+  `--fov 30` looks soft (about 7 map pixels per degree, stretched over ~40 image pixels per
+  degree at 1200 px); use 8k+ maps, a wider `--fov`, or accept a "depth of field" look.
+- Checked with a 2576x1288 JPEG warehouse panorama (2026-11-11): all four rotations render;
+  1200x800, 128 spp + OIDN took 2.5 min on 4 threads.
 
 ## What the script does (so you can do it by hand)
 1. Reads STL/PLY, writes `part_<n>.ply` (binary, unshared vertices, **per-corner normals
