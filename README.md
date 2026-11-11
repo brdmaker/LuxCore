@@ -7,7 +7,7 @@ only build outputs and their docs, no source history.
 |---|---|
 | `luxcore-cli-linux-x86_64.tar.xz` | `bin/luxcoreconsole`, `lib/` (Open Image Denoise 2.5.0, oneTBB 2023.0.0), `COPYING.txt`, `BUILDINFO.txt` |
 | `SHA256SUMS` | SHA-256 of the tarball |
-| `skills/` | agent skills for this build (snapshot of `.claude/skills` on `claude/bold-gauss-8rzxny`) |
+| `skills/` | agent skills for this build (snapshot of `.claude/skills` on `claude/bold-gauss-8rzxny`), including `solidcraft-to-luxcore` and its scripts |
 
 ## Build
 - Source: `brdmaker/LuxCore` commit `64a7632598db46d994f046004a5ee5dad805d0cf` (`main`),

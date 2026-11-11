@@ -16,6 +16,7 @@ Examples
 import argparse
 import math
 import os
+import shutil
 import struct
 import sys
 
@@ -193,9 +194,11 @@ def corner_normals(tris, crease_deg):
     return out
 
 
-def write_ply(path, tris, crease_deg=30.0):
-    """Binary PLY with three unshared vertices per triangle and crease-angle normals."""
-    normals = corner_normals(tris, crease_deg)
+def write_ply(path, tris, crease_deg=30.0, normals=None):
+    """Binary PLY with three unshared vertices per triangle and per-corner normals
+    (given, or crease-angle normals)."""
+    if normals is None:
+        normals = corner_normals(tris, crease_deg)
     with open(path, "wb") as f:
         f.write((
             "ply\nformat binary_little_endian 1.0\ncomment written by luxcore_part_scene.py\n"
@@ -218,7 +221,9 @@ def fmt(*vals):
     return " ".join(f"{v:.6g}" for v in vals)
 
 
-def main(argv=None):
+def main(argv=None, preloaded=None):
+    """preloaded: {path: (tris, corner_normals)} supplied by another tool (no file read)."""
+    preloaded = preloaded or {}
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("parts", nargs="+", help="FILE.stl|FILE.ply, optionally FILE:material")
     ap.add_argument("--out", required=True, help="output folder (created)")
@@ -238,14 +243,24 @@ def main(argv=None):
     ap.add_argument("--time", type=int, default=600, help="batch.halttime seconds (0 = off)")
     ap.add_argument("--noise", type=float, default=0.0,
                     help="batch.haltnoisethreshold, e.g. 0.02 (0 = off)")
-    ap.add_argument("--floor", default="white", choices=["white", "grey", "shadowcatcher", "none"])
+    ap.add_argument("--floor", default=None, choices=["white", "grey", "shadowcatcher", "none"],
+                    help="default: white, or shadowcatcher with --env-map")
     ap.add_argument("--env", default="studio", choices=["studio", "sky"],
                     help="studio = softboxes + dim fill, sky = sun and sky")
+    ap.add_argument("--env-map", default=None, metavar="FILE",
+                    help="equirectangular environment image (.exr/.hdr/.jpg/.png); replaces --env")
+    ap.add_argument("--env-rotate", type=float, default=0.0,
+                    help="rotate the environment map about Z, degrees")
+    ap.add_argument("--env-gain", type=float, default=1.0, help="environment map brightness")
     ap.add_argument("--denoise", action="store_true", help="add INTEL_OIDN to the pipeline")
     ap.add_argument("--transparent", action="store_true",
                     help="also write render_alpha.png (RGBA); use with --floor shadowcatcher|none")
     ap.add_argument("--output", default="render.png", help="image name, relative to --out")
     a = ap.parse_args(argv)
+    if a.env_map:
+        a.env = "map"
+    if a.floor is None:
+        a.floor = "shadowcatcher" if a.env == "map" else "white"
 
     os.makedirs(a.out, exist_ok=True)
     parts = []
@@ -256,7 +271,11 @@ def main(argv=None):
         if ":" in spec and spec.rsplit(":", 1)[1] in MATERIALS:
             path, mat = spec.rsplit(":", 1)
         ext = os.path.splitext(path)[1].lower()
-        tris = read_stl(path) if ext == ".stl" else read_ply_triangles(path)
+        normals = None
+        if path in preloaded:
+            tris, normals = preloaded[path]
+        else:
+            tris = read_stl(path) if ext == ".stl" else read_ply_triangles(path)
         if a.up == "y":
             tris = y_up_to_z_up(tris)
         if not tris:
@@ -266,7 +285,7 @@ def main(argv=None):
                 for i in range(3):
                     lo[i] = min(lo[i], v[i]); hi[i] = max(hi[i], v[i])
         ply = f"part_{n}.ply"
-        write_ply(os.path.join(a.out, ply), tris, a.crease)
+        write_ply(os.path.join(a.out, ply), tris, a.crease, normals)
         parts.append((ply, mat, len(tris), path))
 
     center = [(lo[i] + hi[i]) / 2 for i in range(3)]
@@ -374,6 +393,22 @@ def main(argv=None):
               "scene.lights.fill.color = 1 1 1",
               "scene.lights.fill.gain = 0.3 0.3 0.3",
               "scene.lights.fill.id = 1"]
+    elif a.env == "map":
+        # Copy the map next to the scene so the folder is self-contained (paths resolve via -d).
+        ext = os.path.splitext(a.env_map)[1].lower()
+        env_name = "environment" + ext
+        shutil.copyfile(a.env_map, os.path.join(a.out, env_name))
+        # LuxCore removes gamma 2.2 from every image by default; HDR data is already linear.
+        gamma = "1" if ext in (".exr", ".hdr") else "2.2"
+        r = math.radians(a.env_rotate)
+        cr, sr = math.cos(r), math.sin(r)
+        s += ["scene.lights.env.type = infinite",
+              f"scene.lights.env.file = {env_name}",
+              f"scene.lights.env.gamma = {gamma}",
+              f"scene.lights.env.gain = {fmt(a.env_gain, a.env_gain, a.env_gain)}",
+              # column-major rotation about Z
+              f"scene.lights.env.transformation = {fmt(cr, sr, 0, 0, -sr, cr, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1)}",
+              "scene.lights.env.id = 1"]
     else:
         s += ["scene.lights.sky.type = sky2",
               "scene.lights.sky.dir = -0.5 -0.7 0.6",

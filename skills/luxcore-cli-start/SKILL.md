@@ -129,3 +129,4 @@ Keep each file under GitHub's 100 MB limit (the xz tarball is ~70 MB).
 - Running renders, flags, halt conditions, outputs, troubleshooting: `luxcore-cli-render`.
 - Writing `.cfg` / `.scn` files: `luxcore-scene-format` (with `reference.md`).
 - Photoreal pictures of CAD parts (STL from SolidCraft etc.): `luxcore-render-cad-part`.
+- SolidCraft models with the materials assigned in them: `solidcraft-to-luxcore`.
