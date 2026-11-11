@@ -194,9 +194,11 @@ def corner_normals(tris, crease_deg):
     return out
 
 
-def write_ply(path, tris, crease_deg=30.0):
-    """Binary PLY with three unshared vertices per triangle and crease-angle normals."""
-    normals = corner_normals(tris, crease_deg)
+def write_ply(path, tris, crease_deg=30.0, normals=None):
+    """Binary PLY with three unshared vertices per triangle and per-corner normals
+    (given, or crease-angle normals)."""
+    if normals is None:
+        normals = corner_normals(tris, crease_deg)
     with open(path, "wb") as f:
         f.write((
             "ply\nformat binary_little_endian 1.0\ncomment written by luxcore_part_scene.py\n"
@@ -219,7 +221,9 @@ def fmt(*vals):
     return " ".join(f"{v:.6g}" for v in vals)
 
 
-def main(argv=None):
+def main(argv=None, preloaded=None):
+    """preloaded: {path: (tris, corner_normals)} supplied by another tool (no file read)."""
+    preloaded = preloaded or {}
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("parts", nargs="+", help="FILE.stl|FILE.ply, optionally FILE:material")
     ap.add_argument("--out", required=True, help="output folder (created)")
@@ -267,7 +271,11 @@ def main(argv=None):
         if ":" in spec and spec.rsplit(":", 1)[1] in MATERIALS:
             path, mat = spec.rsplit(":", 1)
         ext = os.path.splitext(path)[1].lower()
-        tris = read_stl(path) if ext == ".stl" else read_ply_triangles(path)
+        normals = None
+        if path in preloaded:
+            tris, normals = preloaded[path]
+        else:
+            tris = read_stl(path) if ext == ".stl" else read_ply_triangles(path)
         if a.up == "y":
             tris = y_up_to_z_up(tris)
         if not tris:
@@ -277,7 +285,7 @@ def main(argv=None):
                 for i in range(3):
                     lo[i] = min(lo[i], v[i]); hi[i] = max(hi[i], v[i])
         ply = f"part_{n}.ply"
-        write_ply(os.path.join(a.out, ply), tris, a.crease)
+        write_ply(os.path.join(a.out, ply), tris, a.crease, normals)
         parts.append((ply, mat, len(tris), path))
 
     center = [(lo[i] + hi[i]) / 2 for i in range(3)]
