@@ -31,6 +31,8 @@ Getting the STL from SolidCraft (in a 3dassets-style repo):
 
 ## From a SolidCraft design, with its own materials (preferred)
 
+Step-by-step workflow, setup, material recipes and checks: skill `solidcraft-to-luxcore`.
+
 `scripts/solidcraft_to_luxcore.py` renders a SolidCraft script (`.json`), design (`.sc`) or
 STEP with the looks assigned in SolidCraft, so materials are described once, in the CAD model:
 ```bash

@@ -11,7 +11,7 @@ stay sharp, curved faces stay smooth), SolidCraft's metal/roughness PBR look is 
 LuxCore `disney` material, and luxcore_part_scene.py writes the studio scene around it.
 
 Usage
-  solidcraft_to_luxcore.py part.json --out /tmp/r/part [--overrides render.json] [scene options]
+  solidcraft_to_luxcore.py part.json --out /tmp/r/part [--looks looks.json] [--overrides render.json] [scene options]
   luxcoreconsole -d /tmp/r/part render.cfg
 
 Scene options (--view, --env, --env-map, --exposure, --denoise, --spp, ...) are passed to
@@ -164,6 +164,8 @@ def main(argv=None):
     ap.add_argument("source", help="SolidCraft script (.json), design (.sc) or STEP file")
     ap.add_argument("--out", required=True, help="output folder for the LuxCore scene")
     ap.add_argument("--overrides", help="render.json with LuxCore material overrides")
+    ap.add_argument("--looks", help="extra SolidCraft script ({commands: [...]}) run after the source, "
+                    "e.g. material.create/assign and appearance.assign for a STEP or a generated part")
     ap.add_argument("--bodies", nargs="*", help="only these bodies (default: all)")
     ap.add_argument("--quality", default="fine", choices=["standard", "fine", "finest"],
                     help="tessellation quality of the export (default fine)")
@@ -180,6 +182,9 @@ def main(argv=None):
     tmp = tempfile.mkdtemp(prefix="sc2lux-")
     try:
         commands, in_file = load_commands(src)
+        if a.looks:
+            with open(a.looks, encoding="utf-8") as f:
+                commands = commands + json.load(f)["commands"]
         design = os.path.join(tmp, "design.sc")
         # Run 1: build, measure, save.
         s1 = os.path.join(tmp, "run1.json")
