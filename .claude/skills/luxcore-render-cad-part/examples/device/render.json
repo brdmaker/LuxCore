@@ -1,6 +1,7 @@
 {
  "bevel": {"default": 0.8, "bodies": {"Screen": 0, "LED_G": 0.2, "LED_R": 0.2}},
- "bodies": {"Housing": "plastic-textured-black", "Knob": "aluminium-blasted"},
+ "materials": {"ABS": {"finish": "plastic-textured"}},
+ "bodies": {"Knob": "aluminium-blasted"},
  "emitters": [
   {"body": "Screen", "face": [-10, 0, 25.6], "image": "screen.png",
    "frame": {"origin": [-50, -24, 25.6], "u": [80, 0, 0], "v": [0, 45, 0]}, "gain": 3, "group": 2},

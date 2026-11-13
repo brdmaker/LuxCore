@@ -1,6 +1,6 @@
 ---
 name: solidcraft-to-luxcore
-description: Use when rendering a SolidCraft part or assembly (script .json, design .sc or STEP, including inserted STEP assemblies) photorealistically in LuxCore with the materials and looks assigned in SolidCraft - setting up solidcraft-cli, luxcoreconsole and solidcraft_to_luxcore.py, describing materials in SolidCraft (physical grade + PBR look, per body or face), adding looks with --looks, render.json for finishes (blasted, powder coat, textured plastic...), edge bevels, emitters (LEDs, displays with an image), decals (logos, labels), reading materials.json, checking mass, and fixing grey or wrong-looking bodies.
+description: Use when rendering a SolidCraft part or assembly (script .json, design .sc or STEP, including inserted STEP assemblies) photorealistically in LuxCore with the materials and looks assigned in SolidCraft - setting up solidcraft-cli, luxcoreconsole and solidcraft_to_luxcore.py, describing materials in SolidCraft (physical grade + PBR look, per body or face), adding looks with --looks, render.json for finishes (plastics: gloss, satin, matte, moulded texture, 3D-printed layer lines, translucent, clear; paints: gloss/clear-coat, satin, matte, metallic, powder coat, structure; RAL colours; blasted metals...), edge bevels, emitters (LEDs, displays with an image), decals (logos, labels), reading materials.json, checking mass, and fixing grey or wrong-looking bodies.
 ---
 
 # SolidCraft → LuxCore with the model's own materials
@@ -146,34 +146,61 @@ two images; rendered output shown in its README).
 
 ### Material overrides
 ```json
-{"bodies":      {"Housing": "plastic-textured-black", "Knob": "aluminium-blasted",
+{"materials":   {"ABS": {"finish": "plastic-textured"},
+                 "EN AW-6082-T6": "aluminium-blasted"},
+ "bodies":      {"Cover": "paint-gloss/RAL3020",
+                 "Bracket": {"finish": "powder-structure", "color": "RAL 7016"},
+                 "Clip": {"finish": "plastic-fdm", "layer": 0.2},
                  "LeadScrew": {"type": "metal2", "n": "2.87 2.95 2.65", "k": "3.12 2.93 2.81",
                                "uroughness": "0.04", "vroughness": "0.04"}},
- "materials":   {"EN AW-6082-T6": "aluminium-blasted"},
- "appearances": {"Smoked glass": {"type": "glass", "kr": "1 1 1", "kt": "0.35 0.35 0.35",
-                                  "interiorior": "1.5"}}}
+ "appearances": {"Smoked glass": {"finish": "plastic-clear", "color": "#50545a"}}}
 ```
-A value is a **finish name** or raw LuxCore material properties (strings). Precedence:
-emitter > body > physical material > appearance name > converted look. A body key may be a
-definition name (applies to every placement). A body override covers the whole body.
+A value is one of:
+- a **finish family** that takes any colour: `"plastic-satin"` (the family's default colour),
+  `"plastic-satin/RAL3020"` or `"plastic-satin/#c03020"`, or an object
+  `{"finish": "plastic-satin", "color": ..., <parameters>}`. **Without `color`, the colour comes
+  from the body's SolidCraft look**, so `"ABS": {"finish": "plastic-textured"}` gives every ABS
+  part moulded grain in its own colour;
+- a fixed finish or plain material name (`aluminium-blasted`, `steel`, ...);
+- raw LuxCore material properties (strings).
 
-Finishes with surface texture (procedural, world-space, so no UVs are needed; units mm):
+Colours: `#rrggbb` (sRGB), `RAL nnnn` (RAL Classic, ~37 common ones, approximate screen sRGB;
+a physical sample is the reference), or `[r, g, b]` linear.
+Precedence: emitter > body > physical material > appearance name > converted look. A body key
+may be a definition name (every placement). A body override covers the whole body.
 
-| Finish | Look |
-|---|---|
-| `aluminium-blasted` | bead-blasted aluminium: rough metal + fine bump |
-| `steel-satin` | steel with gently varying roughness (true machining marks need UVs) |
-| `steel-blackoxide` | dark, blotchy oxide finish |
-| `powder-black` | black powder coat with orange-peel bump |
-| `plastic-textured-black` | moulded plastic with fine (VDI-like) texture |
-| `anodized-black-coated` | black base under a thin clear coat |
-| `soldermask-green` | PCB solder mask |
-| `glass-frosted` | rough glass (needs >= 512 spp or `--denoise`) |
-| `display-black` | glossy black screen glass (default base of image emitters) |
+**Plastics** (dielectric, IOR ~1.5):
 
-plus the plain ones (`aluminium`, `steel`, `brass`, `copper`, `gold`, `anodized-black`,
-`plastic-black|white|grey|red|blue`, `rubber`, `glass`, `clay`, ...): run
-`luxcore_part_scene.py -h` for the list.
+| Family | Surface | Parameters (default) |
+|---|---|---|
+| `plastic-gloss` | polished mould (SPI A): sharp reflections | `roughness` (0.02) |
+| `plastic-satin` | SPI B/C | `roughness` (0.12) |
+| `plastic-matte` | matte, no grain | `roughness` (0.4) |
+| `plastic-textured` | moulded grain (VDI 3400 / MT-like) | `texture` grain mm (0.08), `depth` mm (0.006), `roughness` (0.3) |
+| `plastic-fdm` | 3D printed, layer lines | `layer` mm (0.2), `axis` x\|y\|z (z = print direction), `depth` mm (0.03), `roughness` (0.25) |
+| `plastic-translucent` | PP natural, diffusers, light pipes | `roughness` (0.15); noisy: more spp or `--denoise` |
+| `plastic-clear` | PMMA / PC, colour = tint | `ior` (1.49; PC 1.58), `roughness` (0 = clear, > 0 frosted) |
+
+**Paints and coatings:**
+
+| Family | Surface | Parameters (default) |
+|---|---|---|
+| `paint-gloss` | enamel / 2K: colour under a clear coat | `roughness` of the coat (0.015) |
+| `paint-satin` | satin paint | `roughness` (0.15) |
+| `paint-matte` | matte paint | `roughness` (0.6) |
+| `paint-metallic` | metallic (car) paint: metallic base + clear coat | `flake` base roughness (0.35), `roughness` (0.015) |
+| `powder-coat` | smooth powder coat, orange peel | `texture` mm (0.6), `depth` mm (0.012), `roughness` (0.3) |
+| `powder-structure` | structured / wrinkle powder (machine enclosures) | `texture` mm (0.35), `depth` mm (0.06), `roughness` (0.45) |
+
+Textures are procedural in world space (no UVs needed; units mm). Layer lines and grain show
+mostly in highlights and grazing light; at a distance they average out, as on a real part.
+
+**Fixed finishes** (one colour each): `aluminium-blasted`, `steel-satin` (true machining marks
+need UVs), `steel-blackoxide`, `anodized-black-coated`, `soldermask-green`, `glass-frosted`
+(>= 512 spp or `--denoise`), `display-black`, and the older `powder-black`,
+`plastic-textured-black`; plain: `aluminium`, `steel`, `brass`, `copper`, `gold`,
+`anodized-black`, `plastic-black|white|grey|red|blue`, `rubber`, `glass`, `clay`.
+`luxcore_part_scene.py -h` lists them; the same names work there as `part.stl:plastic-satin/RAL5015`.
 
 ### Bevel: rounded edges at render time
 ```json
