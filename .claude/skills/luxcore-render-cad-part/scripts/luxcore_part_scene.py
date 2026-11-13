@@ -53,6 +53,85 @@ MATERIALS = {
     "clay": [("type", "matte"), ("kd", "0.6 0.6 0.6")],
 }
 
+
+def _noise(name, feature_mm, amplitude_mm, octaves=6):
+    """A 3D fbm height texture in world space (no UVs needed), scaled to amplitude_mm."""
+    s = 1.0 / feature_mm
+    return [(f"{name}_fbm", [("type", "fbm"), ("octaves", str(octaves)), ("roughness", "0.6"),
+                             ("mapping.type", "globalmapping3d"),
+                             ("mapping.transformation", f"{s:g} 0 0 0 0 {s:g} 0 0 0 0 {s:g} 0 0 0 0 1")]),
+            (name, [("type", "scale"), ("texture1", f"{name}_fbm"), ("texture2", f"{amplitude_mm:g}")])]
+
+
+def _rough_var(name, feature_mm, lo, hi):
+    """Roughness varying between lo and hi with a world-space fbm (no UVs needed)."""
+    s = 1.0 / feature_mm
+    return [(f"{name}_fbm", [("type", "fbm"), ("octaves", "4"), ("roughness", "0.5"),
+                             ("mapping.type", "globalmapping3d"),
+                             ("mapping.transformation", f"{s:g} 0 0 0 0 {s:g} 0 0 0 0 {s:g} 0 0 0 0 1")]),
+            (f"{name}_abs", [("type", "abs"), ("texture", f"{name}_fbm")]),
+            (name, [("type", "mix"), ("amount", f"{name}_abs"), ("texture1", f"{lo:g}"), ("texture2", f"{hi:g}")])]
+
+
+# Finishes: materials that need textures or helper materials. Units are mm (CAD scenes).
+# name -> {"textures": [(id, props)], "helpers": [(id, props)], "material": props}
+FINISHES = {
+    "aluminium-blasted": {
+        "textures": _noise("tx_blast", 0.06, 0.002),
+        "material": [("type", "metal2"), ("preset", "aluminium"), ("uroughness", "0.32"),
+                     ("vroughness", "0.32"), ("bumptex", "tx_blast")]},
+    "steel-satin": {  # world-space roughness variation; true machining marks need UVs
+        "textures": _rough_var("tx_satr", 6.0, 0.10, 0.17),
+        "material": [("type", "metal2"), ("n", "2.87 2.95 2.65"), ("k", "3.12 2.93 2.81"),
+                     ("uroughness", "tx_machr"), ("vroughness", "tx_machr")]},
+    "steel-blackoxide": {
+        "textures": _rough_var("tx_oxr", 4.0, 0.25, 0.45),
+        "material": [("type", "metal2"), ("n", "1.9 1.9 1.9"), ("k", "0.6 0.6 0.62"),
+                     ("uroughness", "tx_oxr"), ("vroughness", "tx_oxr")]},
+    "powder-black": {
+        "textures": _noise("tx_peel", 0.6, 0.012),
+        "material": [("type", "glossy2"), ("kd", "0.025 0.025 0.027"), ("ks", "0.05 0.05 0.05"),
+                     ("uroughness", "0.3"), ("vroughness", "0.3"), ("bumptex", "tx_peel")]},
+    "plastic-textured-black": {
+        "textures": _noise("tx_vdi", 0.08, 0.003),
+        "material": [("type", "glossy2"), ("kd", "0.02 0.02 0.02"), ("ks", "0.04 0.04 0.04"),
+                     ("uroughness", "0.28"), ("vroughness", "0.28"), ("bumptex", "tx_vdi")]},
+    "anodized-black-coated": {
+        "helpers": [("hm_anod_base", [("type", "matte"), ("kd", "0.012 0.012 0.014")])],
+        "material": [("type", "glossycoating"), ("base", "mat_hm_anod_base"), ("ks", "0.05 0.05 0.05"),
+                     ("uroughness", "0.12"), ("vroughness", "0.12")]},
+    "soldermask-green": {
+        "material": [("type", "glossy2"), ("kd", "0.015 0.14 0.045"), ("ks", "0.06 0.06 0.06"),
+                     ("uroughness", "0.08"), ("vroughness", "0.08")]},
+    "glass-frosted": {  # converges slowly: >= 512 spp or --denoise
+        "material": [("type", "roughglass"), ("kr", "1 1 1"), ("kt", "0.95 0.95 0.95"),
+                     ("interiorior", "1.5"), ("uroughness", "0.3"), ("vroughness", "0.3")]},
+    "display-black": {
+        "material": [("type", "glossy2"), ("kd", "0 0 0"), ("ks", "0.04 0.04 0.04"),
+                     ("uroughness", "0.01"), ("vroughness", "0.01")]},
+}
+
+# Registries other tools (solidcraft_to_luxcore.py) fill before calling main(). The scene gets
+# only what the used materials reference (followed through textures and helpers).
+TEXTURES = {}        # texture id -> props, emitted in insertion order before all materials
+HELPERS = {}         # helper material id (without mat_) -> props, emitted before part materials
+COPY_FILES = {}      # file name in --out -> source path (images used by textures)
+PART_OPTIONS = {}    # part path/key -> {"bevel": mm, "camerainvisible": 0|1}
+
+
+def register_finish(name, finish):
+    """Make a FINISHES entry usable as a material name."""
+    for tid, props in finish.get("textures", []):
+        TEXTURES.setdefault(tid, props)
+    for hid, props in finish.get("helpers", []):
+        HELPERS.setdefault(hid, props)
+    MATERIALS[name] = finish["material"]
+
+
+for _n, _f in FINISHES.items():
+    register_finish(_n, _f)
+
+
 VIEWS = {  # direction from target to camera (Z up)
     "iso": (1.0, -1.0, 0.8),
     "iso-back": (-1.0, 1.0, 0.8),
@@ -194,9 +273,9 @@ def corner_normals(tris, crease_deg):
     return out
 
 
-def write_ply(path, tris, crease_deg=30.0, normals=None):
-    """Binary PLY with three unshared vertices per triangle and per-corner normals
-    (given, or crease-angle normals)."""
+def write_ply(path, tris, crease_deg=30.0, normals=None, uvs=None):
+    """Binary PLY with three unshared vertices per triangle, per-corner normals (given, or
+    crease-angle normals) and optional per-corner texture coordinates (LuxCore reads `s t`)."""
     if normals is None:
         normals = corner_normals(tris, crease_deg)
     with open(path, "wb") as f:
@@ -204,11 +283,17 @@ def write_ply(path, tris, crease_deg=30.0, normals=None):
             "ply\nformat binary_little_endian 1.0\ncomment written by luxcore_part_scene.py\n"
             f"element vertex {3 * len(tris)}\nproperty float x\nproperty float y\nproperty float z\n"
             "property float nx\nproperty float ny\nproperty float nz\n"
-            f"element face {len(tris)}\nproperty list uchar int vertex_indices\nend_header\n"
+            + ("property float s\nproperty float t\n" if uvs is not None else "")
+            + f"element face {len(tris)}\nproperty list uchar int vertex_indices\nend_header\n"
         ).encode("ascii"))
-        for t, ns in zip(tris, normals):
-            for v, n in zip(t, ns):
-                f.write(struct.pack("<6f", *v, *n))
+        if uvs is None:
+            for t, ns in zip(tris, normals):
+                for v, n in zip(t, ns):
+                    f.write(struct.pack("<6f", *v, *n))
+        else:
+            for t, ns, us in zip(tris, normals, uvs):
+                for v, n, uv in zip(t, ns, us):
+                    f.write(struct.pack("<8f", *v, *n, *uv))
         for i in range(len(tris)):
             f.write(struct.pack("<B3i", 3, 3 * i, 3 * i + 1, 3 * i + 2))
 
@@ -236,6 +321,9 @@ def main(argv=None, preloaded=None):
                     help="smooth-shading crease angle in degrees (0 = flat facets)")
     ap.add_argument("--exposure", type=float, default=0.0,
                     help="TONEMAP_LINEAR scale; 0 = auto (TONEMAP_AUTOLINEAR)")
+    ap.add_argument("--bevel", type=float, default=0.0,
+                    help="round every convex edge at render time with this radius (scene units, "
+                         "mm for CAD); keep it below the smallest real feature. 0 = off")
     ap.add_argument("--up", default="z", choices=["z", "y"], help="up axis of the input files")
     ap.add_argument("--width", type=int, default=1200)
     ap.add_argument("--height", type=int, default=900)
@@ -271,9 +359,10 @@ def main(argv=None, preloaded=None):
         if ":" in spec and spec.rsplit(":", 1)[1] in MATERIALS:
             path, mat = spec.rsplit(":", 1)
         ext = os.path.splitext(path)[1].lower()
-        normals = None
+        normals = uvs = None
         if path in preloaded:
-            tris, normals = preloaded[path]
+            tris, normals, *rest = preloaded[path]
+            uvs = rest[0] if rest else None
         else:
             tris = read_stl(path) if ext == ".stl" else read_ply_triangles(path)
         if a.up == "y":
@@ -285,7 +374,7 @@ def main(argv=None, preloaded=None):
                 for i in range(3):
                     lo[i] = min(lo[i], v[i]); hi[i] = max(hi[i], v[i])
         ply = f"part_{n}.ply"
-        write_ply(os.path.join(a.out, ply), tris, a.crease, normals)
+        write_ply(os.path.join(a.out, ply), tris, a.crease, normals, uvs)
         parts.append((ply, mat, len(tris), path))
 
     center = [(lo[i] + hi[i]) / 2 for i in range(3)]
@@ -336,6 +425,29 @@ def main(argv=None, preloaded=None):
          f"scene.camera.fieldofview = {fmt(a.fov)}",
          f"scene.camera.cliphither = {fmt(dist * 1e-3)}",
          ""]
+    # Textures first (LuxCore needs a texture defined before anything that names it), then
+    # helper materials (bases of coatings, the two sides of a decal mix), then part materials.
+    # Emit exactly what the used materials reference, followed recursively through helpers and
+    # textures (a scale texture names its fbm, a mix material names its helpers).
+    tex_ids, helper_ids = set(), set()
+    todo = [MATERIALS[m] for m in used]
+    while todo:
+        for _, v in todo.pop():
+            for tok in str(v).split():
+                if tok in TEXTURES and tok not in tex_ids:
+                    tex_ids.add(tok)
+                    todo.append(TEXTURES[tok])
+                elif tok.startswith("mat_") and tok[4:] in HELPERS and tok[4:] not in helper_ids:
+                    helper_ids.add(tok[4:])
+                    todo.append(HELPERS[tok[4:]])
+    for tid in [t for t in TEXTURES if t in tex_ids]:
+        for k, v in TEXTURES[tid]:
+            s.append(f"scene.textures.{tid}.{k} = {v}")
+    for h in [h for h in HELPERS if h in helper_ids]:
+        for k, v in HELPERS[h]:
+            s.append(f"scene.materials.mat_{h}.{k} = {v}")
+    for dst, src_path in COPY_FILES.items():
+        shutil.copyfile(src_path, os.path.join(a.out, dst))
     for m in used:
         for k, v in MATERIALS[m]:
             s.append(f"scene.materials.mat_{m.replace('-', '_')}.{k} = {v}")
@@ -353,10 +465,20 @@ def main(argv=None, preloaded=None):
               "scene.materials.mat_softbox.emission.id = 0"]
     s.append("")
     for n, (ply, mat, ntri, src) in enumerate(parts):
+        opts = PART_OPTIONS.get(src, {})
+        bevel = opts.get("bevel", a.bevel)
         s.append(f"# part {n}: {src} ({ntri} triangles)")
         s.append(f"scene.shapes.part_{n}.type = mesh")
         s.append(f"scene.shapes.part_{n}.ply = {ply}")
-        s.append(f"scene.objects.part_{n}.shape = part_{n}")
+        shape = f"part_{n}"
+        if bevel and bevel > 0:
+            s.append(f"scene.shapes.part_{n}_bevel.type = bevel")
+            s.append(f"scene.shapes.part_{n}_bevel.source = part_{n}")
+            s.append(f"scene.shapes.part_{n}_bevel.bevel.radius = {fmt(bevel)}")
+            shape = f"part_{n}_bevel"
+        s.append(f"scene.objects.part_{n}.shape = {shape}")
+        if opts.get("camerainvisible"):
+            s.append(f"scene.objects.part_{n}.camerainvisible = 1")
         s.append(f"scene.objects.part_{n}.material = mat_{mat.replace('-', '_')}")
     if a.floor != "none":
         s += ["scene.shapes.floor.type = inlinedmesh",

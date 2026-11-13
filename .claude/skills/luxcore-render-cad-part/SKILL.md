@@ -113,13 +113,32 @@ metal2 override.
 | `--denoise` | off | Intel OIDN (+ albedo/normal AOVs); 128 spp + denoise looks clean |
 | `--transparent` | off | also `render_alpha.png` (RGBA); pair with `--floor shadowcatcher` (keeps a soft, partly transparent floor shading near the part) or `none` (clean cut-out) |
 | `--crease` | 30 | smooth-normal crease angle in degrees; 0 = flat facets |
+| `--bevel` | 0 | round every convex edge at render time, radius in mm (0.3-1 for machined/moulded parts); below the smallest real feature. Needs the luxcore-cli-2026-11-13 build or newer |
 | `--up` | `z` | `y` for Y-up exports (rotated to Z-up) |
 
 Materials: `aluminium`, `aluminium-brushed`, `steel`, `steel-polished`, `brass`, `copper`,
 `gold`, `anodized-black`, `plastic-black|white|grey|red|blue`, `rubber`, `glass`, `clay`
-(neutral grey, good for checking form). The script prints the bounding box and triangle
+(neutral grey, good for checking form). Finishes with procedural surface texture (no UVs
+needed): `aluminium-blasted`, `steel-satin`, `steel-blackoxide`, `powder-black`,
+`plastic-textured-black`, `anodized-black-coated`, `soldermask-green`, `glass-frosted`
+(>= 512 spp or `--denoise`), `display-black`; see `solidcraft-to-luxcore` for what each looks
+like. Emitters (LEDs, screens) and decals are set per face in `render.json` by
+`solidcraft_to_luxcore.py`; a full example is `examples/device/`. The script prints the bounding box and triangle
 counts; the `.scn` it writes is plain text, so edit it for anything else (colours, roughness,
 extra lights; see `luxcore-scene-format`).
+
+### Same techniques by hand (in a `.scn`)
+- **Bevel:** `scene.shapes.b.type = bevel`, `.source = <mesh shape>`, `.bevel.radius = 0.5`;
+  point the object at `b`.
+- **Screen:** emissive material whose `emission` is an `imagemap` texture; the mesh needs UVs
+  (`s t` in the PLY, or `.uvs` on an inlinedmesh). **LuxCore reads image row 0 at t = 0**, so a
+  quad's UVs run `0 1  1 1  1 0  0 0` for its corners lower-left, lower-right, upper-right,
+  upper-left, or the image is upside down.
+- **LED:** small body, `emission = <colour>`, `emission.gain` 20-60, `emission.id` for its
+  light group; `BLOOM` in the image pipeline adds glow.
+- **Decal:** a sheet just above the surface with `type = mix`, `material1` = a `null`
+  material, `material2` = the ink (`kd` = the image), `amount` = the image's alpha
+  (`imagemap` with `channel = alpha`, `gamma = 1`); `wrap = black` keeps it inside its frame.
 
 ## Environment maps (image-based lighting)
 

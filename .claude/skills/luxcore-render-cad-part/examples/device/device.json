@@ -1,0 +1,15 @@
+{"commands": [
+ {"command": "solid.box", "params": {"length": 120, "width": 70, "height": 25, "corner": [-60, -35, 0], "name": "Housing", "body_name": "Housing"}},
+ {"command": "solid.box", "params": {"length": 80, "width": 45, "height": 0.6, "corner": [-50, -24, 25], "operation": "new", "name": "Screen", "body_name": "Screen"}},
+ {"command": "solid.cylinder", "params": {"diameter": 3, "height": 1.5, "base": [42, -15, 25], "operation": "new", "name": "LED_G", "body_name": "LED_G"}},
+ {"command": "solid.cylinder", "params": {"diameter": 3, "height": 1.5, "base": [42, -5, 25], "operation": "new", "name": "LED_R", "body_name": "LED_R"}},
+ {"command": "solid.cylinder", "params": {"diameter": 14, "height": 8, "base": [45, 18, 25], "operation": "new", "name": "Knob", "body_name": "Knob"}},
+ {"command": "material.create", "params": {"name": "ABS", "density_g_cm3": 1.04, "color": "#1a1a1c", "pbr": {"metallic": 0, "roughness": 0.4, "dielectric_ior": 1.5}}},
+ {"command": "material.create", "params": {"name": "Soda-lime glass", "density_g_cm3": 2.5, "color": "#0a0c10", "pbr": {"metallic": 0, "roughness": 0.05, "dielectric_ior": 1.5}}},
+ {"command": "material.create", "params": {"name": "PC clear", "density_g_cm3": 1.2, "color": "#e8e8e8", "pbr": {"metallic": 0, "roughness": 0.1, "dielectric_ior": 1.58}}},
+ {"command": "material.create", "params": {"name": "EN AW-6082-T6", "density_g_cm3": 2.70, "color": "#c8cacc", "pbr": {"metallic": 1, "roughness": 0.3, "dielectric_ior": 1.5}}},
+ {"command": "material.assign", "params": {"bodies": ["Housing"], "material": "ABS"}},
+ {"command": "material.assign", "params": {"bodies": ["Screen"], "material": "Soda-lime glass"}},
+ {"command": "material.assign", "params": {"bodies": ["LED_G", "LED_R"], "material": "PC clear"}},
+ {"command": "material.assign", "params": {"bodies": ["Knob"], "material": "EN AW-6082-T6"}}
+]}

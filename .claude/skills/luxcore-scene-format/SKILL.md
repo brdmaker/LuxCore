@@ -99,6 +99,9 @@ Run: `luxcoreconsole -d <folder> render.cfg`.
 - **Matrices: 16 numbers, column-major, translation in values 13-15.** Move by (10,0,5):
   `1 0 0 0  0 1 0 0  0 0 1 0  10 0 5 1`. On a shape it is baked into the mesh; on an object
   it makes an instance (cheap copies: many objects, one shape).
+- Image textures need UVs, and LuxCore reads image row 0 at t = 0: flip `v` (t = 1 - v) or
+  images come out upside down. `emission` takes any texture (screens), `mix` with a `null`
+  material and an alpha `imagemap` as `amount` makes a decal.
 - Modifiers are shapes with `.source`: `subdiv`, `displacement`, `bevel`, `simplify`,
   `pointiness`, `harlequin` (random colour per triangle, debugging).
 - Very large or tiny scenes: set `scene.epsilon.min/max` (absolute distances; defaults

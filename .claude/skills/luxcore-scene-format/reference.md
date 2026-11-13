@@ -326,7 +326,7 @@ Mesh files: **only `.ply` (ASCII or binary) and `.bpy` (LuxCore serialized mesh)
 | `islandaov` | `.source`, `.dataindex` (0) |
 | `randomtriangleaov` | `.source`, `.srcdataindex` (0), `.dstdataindex` (0) |
 | `edgedetectoraov` | `.source`, `.aovindex0/1/2` (0/1/2) |
-| `bevel` | `.source`, `.bevel.radius` (0) |
+| `bevel` | `.source`, `.bevel.radius` (0). Rounds convex edges at render time (CPU engines). Builds before 2026-11-13 segfault when the source has no convex edge (flat panel, concave fold); fixed in `src/luxrays/core/exttrianglemeshbevel.cpp`, test `BevelShapeWithoutConvexEdges` in `pyunittests/.../shapes/testsingle.py` |
 | `cameraprojuv` | `.source`, `.uvindex` (0) |
 | `mergeondistance` | `.source`, `.tolerance` (1), `.importnormals` (0) |
 
