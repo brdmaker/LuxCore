@@ -24,9 +24,11 @@ run from the script's folder or pass --cwd.
 
 render.json (optional; paths in it are relative to its folder). Everything a PBR look in
 SolidCraft cannot say; every section is optional:
-  {"bodies":      {"Shaft": "steel-satin",                      <- a finish name (-h of the
-                   "Hood": {"type": "glossy2", ...}},              scene writer lists them), or
-   "materials":   {"EN AW-6082-T6": "aluminium-blasted"},         raw LuxCore properties
+  {"bodies":      {"Shaft": "steel-satin",                   <- a finish name, a finish family
+                   "Cover": "paint-gloss/RAL3020",               with a colour, a family object
+                   "Clip": {"finish": "plastic-fdm", "layer": 0.2},   (no "color": the look's),
+                   "Hood": {"type": "glossy2", ...}},            or raw LuxCore properties
+   "materials":   {"ABS": {"finish": "plastic-textured"}, "EN AW-6082-T6": "aluminium-blasted"},
    "appearances": {"Smoked glass": {"type": "glass", ...}},
    "bevel":       0.5  or  {"default": 0.5, "bodies": {"Screen": 0}},
    "emitters":    [{"body": "LED1", "face": [x, y, z], "color": "#20ff40", "gain": 40, "group": 3},
@@ -329,12 +331,15 @@ def main(argv=None):
         base_dir = os.path.dirname(os.path.abspath(a.overrides)) if a.overrides else os.getcwd()
         preloaded, specs, manifest, mat_ids = {}, [], [], {}
 
-        def material_for(spec):
-            """A finish/material name from luxcore_part_scene, or a dict of LuxCore properties."""
-            if isinstance(spec, str):
-                if spec not in lps.MATERIALS:
-                    sys.exit(f"unknown finish `{spec}`; known: {', '.join(sorted(lps.MATERIALS))}")
-                return spec
+        def material_for(spec, look=None):
+            """A material/finish name ("plastic-satin", "paint-gloss/RAL3020", "steel"), a finish
+            dict {"finish": family, "color"?, params} whose colour defaults to the SolidCraft
+            look's, or a dict of raw LuxCore properties."""
+            if isinstance(spec, str) or (isinstance(spec, dict) and "finish" in spec):
+                try:
+                    return lps.resolve_material(spec, default_color=(look or {}).get("color"))
+                except ValueError as e:
+                    sys.exit(str(e))
             props = spec if isinstance(spec, list) else list(spec.items())
             pk = json.dumps(props)
             if pk not in mat_ids:
@@ -462,7 +467,7 @@ def main(argv=None):
                             or overrides.get("materials", {}).get(b.get("material") or "")
                             or overrides.get("appearances", {}).get(look.get("name") or ""))
                     source = "override" if spec else "look"
-                    mat_id = material_for(spec if spec else look_to_luxcore(look))
+                    mat_id = material_for(spec, look) if spec else material_for(look_to_luxcore(look))
                     props = lps.MATERIALS[mat_id]
                 key = f"body{bi}#{gi}"
                 preloaded[key] = (tris, nrms, uvs) if uvs else (tris, nrms)

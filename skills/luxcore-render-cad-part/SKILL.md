@@ -118,7 +118,13 @@ metal2 override.
 
 Materials: `aluminium`, `aluminium-brushed`, `steel`, `steel-polished`, `brass`, `copper`,
 `gold`, `anodized-black`, `plastic-black|white|grey|red|blue`, `rubber`, `glass`, `clay`
-(neutral grey, good for checking form). Finishes with procedural surface texture (no UVs
+(neutral grey, good for checking form). **Plastics and paints in any colour** use a finish
+family with an optional colour after `/` (`#rrggbb`, `rrggbb` or `RALnnnn`):
+`part.stl:plastic-satin/RAL5015`, `--material paint-gloss/c03020`. Families: `plastic-gloss`,
+`plastic-satin`, `plastic-matte`, `plastic-textured`, `plastic-fdm` (layer lines),
+`plastic-translucent`, `plastic-clear`, `paint-gloss`, `paint-satin`, `paint-matte`,
+`paint-metallic`, `powder-coat`, `powder-structure`; parameters and looks are in
+`solidcraft-to-luxcore` (section 5). Fixed finishes with procedural surface texture (no UVs
 needed): `aluminium-blasted`, `steel-satin`, `steel-blackoxide`, `powder-black`,
 `plastic-textured-black`, `anodized-black-coated`, `soldermask-green`, `glass-frosted`
 (>= 512 spp or `--denoise`), `display-black`; see `solidcraft-to-luxcore` for what each looks

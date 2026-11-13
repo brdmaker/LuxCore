@@ -14,6 +14,7 @@ Examples
 """
 
 import argparse
+import json
 import math
 import os
 import shutil
@@ -130,6 +131,188 @@ def register_finish(name, finish):
 
 for _n, _f in FINISHES.items():
     register_finish(_n, _f)
+
+
+# ---------------------------------------------------------------------------------------------
+# Finish families: a surface type that takes any colour (plastics, paints, coatings).
+# Spec forms (anywhere a material name is accepted):
+#   "plastic-satin"                    the family's default colour
+#   "plastic-satin/RAL3020"            "/RAL nnnn", "/#rrggbb" or "/rrggbb" (sRGB)
+#   {"finish": "plastic-fdm", "color": "#c03020", "layer": 0.2}   (render.json)
+# In solidcraft_to_luxcore.py a dict without "color" takes the colour of the SolidCraft look.
+# ---------------------------------------------------------------------------------------------
+
+# RAL Classic, approximate sRGB for screen use (the official values are CIELab under D65; a
+# printed or painted sample is the reference, not these numbers).
+RAL = {
+    "1003": "#F9A800", "1013": "#E3D9C6", "1015": "#E6D2B5", "1021": "#EEC900", "1023": "#F0CA00",
+    "2004": "#E75B12", "3000": "#A72920", "3020": "#BB1E10", "5002": "#00387B", "5010": "#004F7C",
+    "5012": "#0089B6", "5015": "#007CB0", "5017": "#005B8C", "6005": "#0F4336", "6011": "#5C7E4B",
+    "6018": "#48A43F", "6029": "#006F3D", "7001": "#8F999F", "7004": "#9EA0A1", "7016": "#383E42",
+    "7021": "#2F3234", "7024": "#45494E", "7032": "#B9B9A8", "7035": "#CBD0CC", "7040": "#9DA3A6",
+    "7042": "#8F9695", "7047": "#D0D0D0", "9002": "#D7D5CB", "9003": "#ECECE7", "9004": "#2B2B2C",
+    "9005": "#0A0A0D", "9006": "#A1A1A0", "9007": "#878581", "9010": "#F1ECE1", "9011": "#27292B",
+    "9016": "#F1F0EA", "9017": "#2A292A",
+}
+
+
+def srgb_to_linear(c):
+    return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+
+
+def parse_color(c):
+    """'#rrggbb' / 'rrggbb' (sRGB), 'RAL 7035' / 'RAL7035', or [r, g, b] linear -> linear tuple."""
+    if isinstance(c, (list, tuple)):
+        return tuple(float(x) for x in c[:3])
+    t = str(c).strip()
+    m = t.upper().replace(" ", "").replace("_", "")
+    if m.startswith("RAL"):
+        if m[3:] not in RAL:
+            raise ValueError(f"RAL {m[3:]} is not in the table; give its colour as #rrggbb")
+        t = RAL[m[3:]]
+    t = t.lstrip("#")
+    if len(t) != 6 or any(ch not in "0123456789abcdefABCDEF" for ch in t):
+        raise ValueError(f"not a colour: {c!r} (use #rrggbb, RAL nnnn or [r, g, b])")
+    return tuple(srgb_to_linear(int(t[i:i + 2], 16) / 255.0) for i in (0, 2, 4))
+
+
+def _rgb(c, k=1.0):
+    return " ".join(f"{min(1.0, x * k):.5g}" for x in c)
+
+
+def _glossy(c, rough, ks=0.045):
+    return [("type", "glossy2"), ("kd", _rgb(c)), ("ks", f"{ks:g} {ks:g} {ks:g}"),
+            ("uroughness", f"{rough:g}"), ("vroughness", f"{rough:g}")]
+
+
+def _layer_lines(uid, layer, depth, axis):
+    """Bump for FDM layer lines: a triangle wave of the world coordinate along `axis`."""
+    ch = {"x": 0, "y": 1, "z": 2}[axis]
+    off = round(10000.0 / layer) * layer  # fmod is negative below 0: shift, keeping the phase
+    return [(f"{uid}_pos", [("type", "position")]),
+            (f"{uid}_h", [("type", "splitfloat3"), ("texture", f"{uid}_pos"), ("channel", str(ch))]),
+            (f"{uid}_hs", [("type", "add"), ("texture1", f"{uid}_h"), ("texture2", f"{off:g}")]),
+            (f"{uid}_m", [("type", "modulo"), ("texture", f"{uid}_hs"), ("modulo", f"{layer:g}")]),
+            (f"{uid}_f", [("type", "scale"), ("texture1", f"{uid}_m"), ("texture2", f"{1.0 / layer:g}")]),
+            (f"{uid}_c", [("type", "subtract"), ("texture1", f"{uid}_f"), ("texture2", "0.5")]),
+            (f"{uid}_a", [("type", "abs"), ("texture", f"{uid}_c")]),
+            (uid, [("type", "scale"), ("texture1", f"{uid}_a"), ("texture2", f"{2 * depth:g}")])]
+
+
+def _fam_plastic(rough, bump=None):
+    def build(uid, c, p):
+        tex = []
+        mat = _glossy(c, float(p.get("roughness", rough)))
+        if bump:
+            feat, amp = float(p.get("texture", bump[0])), float(p.get("depth", bump[1]))
+            tex = _noise(f"{uid}_b", feat, amp)
+            mat.append(("bumptex", f"{uid}_b"))
+        return {"textures": tex, "material": mat}
+    return build
+
+
+def _fam_fdm(uid, c, p):
+    layer, depth = float(p.get("layer", 0.2)), float(p.get("depth", 0.03))
+    tex = _layer_lines(f"{uid}_ll", layer, depth, str(p.get("axis", "z")).lower())
+    return {"textures": tex, "material": _glossy(c, float(p.get("roughness", 0.25))) + [("bumptex", f"{uid}_ll")]}
+
+
+def _fam_translucent(uid, c, p):
+    r = float(p.get("roughness", 0.15))
+    return {"material": [("type", "glossytranslucent"), ("kd", _rgb(c)), ("kt", _rgb(c, 0.8)),
+                         ("ks", "0.04 0.04 0.04"), ("uroughness", f"{r:g}"), ("vroughness", f"{r:g}")]}
+
+
+def _fam_clear(uid, c, p):
+    ior, r = float(p.get("ior", 1.49)), float(p.get("roughness", 0.0))
+    if r > 0:
+        return {"material": [("type", "roughglass"), ("kr", "1 1 1"), ("kt", _rgb(c)),
+                             ("interiorior", f"{ior:g}"), ("uroughness", f"{r:g}"), ("vroughness", f"{r:g}")]}
+    return {"material": [("type", "glass"), ("kr", "1 1 1"), ("kt", _rgb(c)), ("interiorior", f"{ior:g}")]}
+
+
+def _fam_paint_gloss(uid, c, p):
+    r = float(p.get("roughness", 0.015))
+    return {"helpers": [(f"{uid}_base", [("type", "matte"), ("kd", _rgb(c))])],
+            "material": [("type", "glossycoating"), ("base", f"mat_{uid}_base"), ("ks", "0.05 0.05 0.05"),
+                         ("uroughness", f"{r:g}"), ("vroughness", f"{r:g}")]}
+
+
+def _fam_paint_metallic(uid, c, p):
+    r = float(p.get("roughness", 0.015))
+    return {"helpers": [(f"{uid}_base", [("type", "disney"), ("basecolor", _rgb(c)), ("metallic", "0.75"),
+                                          ("roughness", f"{float(p.get('flake', 0.35)):g}")])],
+            "material": [("type", "glossycoating"), ("base", f"mat_{uid}_base"), ("ks", "0.05 0.05 0.05"),
+                         ("uroughness", f"{r:g}"), ("vroughness", f"{r:g}")]}
+
+
+def _fam_powder(rough, feat, amp, octaves=6):
+    def build(uid, c, p):
+        f, a = float(p.get("texture", feat)), float(p.get("depth", amp))
+        return {"textures": _noise(f"{uid}_b", f, a, octaves),
+                "material": _glossy(c, float(p.get("roughness", rough)), 0.05) + [("bumptex", f"{uid}_b")]}
+    return build
+
+
+# name -> (builder(uid, linear colour, params), default colour, one-line description)
+FAMILIES = {
+    "plastic-gloss": (_fam_plastic(0.02), "RAL9005", "polished-mould plastic (SPI A), mirror-like highlights"),
+    "plastic-satin": (_fam_plastic(0.12), "RAL9005", "satin plastic (SPI B/C)"),
+    "plastic-matte": (_fam_plastic(0.4), "RAL9005", "matte plastic, no texture"),
+    "plastic-textured": (_fam_plastic(0.3, (0.08, 0.006)), "RAL9005",
+                         "moulded texture (VDI 3400 / MT-like); texture = grain size mm, depth mm"),
+    "plastic-fdm": (_fam_fdm, "RAL9005", "3D-printed (FDM) with layer lines; layer mm, axis x|y|z, depth mm"),
+    "plastic-translucent": (_fam_translucent, "#f0f0f0", "translucent plastic (PP natural, diffusers, light pipes)"),
+    "plastic-clear": (_fam_clear, "#ffffff", "clear plastic (PMMA ior 1.49, PC 1.58); colour = tint; roughness > 0 frosts it"),
+    "paint-gloss": (_fam_paint_gloss, "RAL3020", "gloss paint / enamel: colour under a clear coat"),
+    "paint-satin": (lambda uid, c, p: {"material": _glossy(c, float(p.get("roughness", 0.15)), 0.04)},
+                    "RAL7035", "satin paint"),
+    "paint-matte": (lambda uid, c, p: {"material": _glossy(c, float(p.get("roughness", 0.6)), 0.03)},
+                    "RAL7035", "matte paint"),
+    "paint-metallic": (_fam_paint_metallic, "RAL9006", "metallic paint (car paint): metallic base, clear coat"),
+    "powder-coat": (_fam_powder(0.3, 0.6, 0.012), "RAL9005", "smooth powder coat with orange peel"),
+    "powder-structure": (_fam_powder(0.45, 0.35, 0.06, 4), "RAL7016",
+                         "structured / wrinkle powder coat (machine enclosures)"),
+}
+
+_resolved = {}
+
+
+def resolve_material(spec, default_color=None):
+    """Material name for a spec: a MATERIALS name, a family name with optional '/colour', or a
+    dict {"finish": family, "color": ..., params}. Registers families on first use."""
+    if isinstance(spec, str) and spec in MATERIALS:
+        return spec
+    if isinstance(spec, str):
+        fam, _, col = spec.partition("/")
+        params = {}
+        if col:
+            params["color"] = col if col.upper().startswith("RAL") or col.startswith("#") else "#" + col
+    else:
+        params = dict(spec)
+        fam = params.pop("finish")
+    if fam not in FAMILIES:
+        raise ValueError(f"unknown material or finish `{fam}`; known: "
+                         + ", ".join(sorted(MATERIALS)) + "; families: " + ", ".join(sorted(FAMILIES)))
+    builder, dflt, _ = FAMILIES[fam]
+    color = params.pop("color", None)
+    if color is None:
+        color = default_color if default_color is not None else dflt
+    lin = parse_color(color)
+    key = json.dumps([fam, [round(x, 5) for x in lin], sorted(params.items())])
+    if key not in _resolved:
+        uid = f"f{len(_resolved)}_{fam.replace('-', '_')}"
+        register_finish(uid, builder(uid, lin, params))
+        _resolved[key] = uid
+    return _resolved[key]
+
+
+def is_material_spec(name):
+    try:
+        resolve_material(name)
+        return True
+    except (ValueError, KeyError):
+        return False
 
 
 VIEWS = {  # direction from target to camera (Z up)
@@ -309,11 +492,17 @@ def fmt(*vals):
 def main(argv=None, preloaded=None):
     """preloaded: {path: (tris, corner_normals)} supplied by another tool (no file read)."""
     preloaded = preloaded or {}
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    epilog = ("materials: " + ", ".join(sorted(m for m in MATERIALS if not m.startswith(("f", "sc_"))
+                                                or m in FINISHES or m in ("gold", "glass")))
+              + "\n\nfinish families (any colour: NAME/RAL7035, NAME/#c03020, NAME/c03020):\n"
+              + "\n".join(f"  {n:20s} {d}" for n, (_, _, d) in sorted(FAMILIES.items())))
+    ap = argparse.ArgumentParser(description=__doc__, epilog=epilog,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("parts", nargs="+", help="FILE.stl|FILE.ply, optionally FILE:material")
     ap.add_argument("--out", required=True, help="output folder (created)")
-    ap.add_argument("--material", default="aluminium", choices=sorted(MATERIALS),
-                    help="material for parts without :material (default aluminium)")
+    ap.add_argument("--material", default="aluminium",
+                    help="material for parts without :material (default aluminium): a name below, "
+                         "or a finish family with an optional colour, e.g. plastic-satin/RAL3020")
     ap.add_argument("--view", default="iso", choices=sorted(VIEWS))
     ap.add_argument("--fov", type=float, default=30.0, help="perspective FOV in degrees")
     ap.add_argument("--zoom", type=float, default=1.0, help=">1 moves the camera closer")
@@ -356,8 +545,12 @@ def main(argv=None, preloaded=None):
     hi = [-math.inf] * 3
     for n, spec in enumerate(a.parts):
         path, mat = spec, a.material
-        if ":" in spec and spec.rsplit(":", 1)[1] in MATERIALS:
+        if ":" in spec and is_material_spec(spec.rsplit(":", 1)[1]):
             path, mat = spec.rsplit(":", 1)
+        try:
+            mat = resolve_material(mat)
+        except ValueError as e:
+            sys.exit(str(e))
         ext = os.path.splitext(path)[1].lower()
         normals = uvs = None
         if path in preloaded:

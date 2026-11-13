@@ -21,8 +21,9 @@ luxcoreconsole -d /tmp/r/device render.cfg        # ~30 s on 4 threads
 ```
 
 What each part of `render.json` does:
-- `bodies`: the housing gets `plastic-textured-black`, the knob `aluminium-blasted` (finishes
-  with procedural bump; the knob's SolidCraft look is plain aluminium).
+- `materials`: every ABS body gets the `plastic-textured` finish (moulded grain); its colour
+  still comes from the ABS look in `device.json`, so one line covers ABS parts of any colour.
+- `bodies`: the knob gets `aluminium-blasted` (its SolidCraft look is plain aluminium).
 - `bevel`: 0.8 mm on everything, 0.2 mm on the LEDs, none on the 0.6 mm screen.
 - `emitters`: the screen's top face shows `screen.png` (placed by `frame`); the LEDs' top
   faces glow green and red in light group 3.
