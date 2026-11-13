@@ -1,0 +1,14 @@
+{
+ "bevel": {"default": 0.8, "bodies": {"Screen": 0, "LED_G": 0.2, "LED_R": 0.2}},
+ "bodies": {"Housing": "plastic-textured-black", "Knob": "aluminium-blasted"},
+ "emitters": [
+  {"body": "Screen", "face": [-10, 0, 25.6], "image": "screen.png",
+   "frame": {"origin": [-50, -24, 25.6], "u": [80, 0, 0], "v": [0, 45, 0]}, "gain": 3, "group": 2},
+  {"body": "LED_G", "face": [42, -15, 26.5], "color": "#20ff40", "gain": 40, "group": 3},
+  {"body": "LED_R", "face": [42, -5, 26.5], "color": "#ff2010", "gain": 40, "group": 3}
+ ],
+ "decals": [
+  {"body": "Housing", "face": [0, -35, 12], "image": "decal.png",
+   "frame": {"origin": [-40, -35, 6], "u": [80, 0, 0], "v": [0, 0, 20]}}
+ ]
+}
